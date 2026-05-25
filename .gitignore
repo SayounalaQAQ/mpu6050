@@ -1,0 +1,21 @@
+# MDK-ARM build artifacts
+MDK-ARM/**/*.o
+MDK-ARM/**/*.crf
+MDK-ARM/**/*.d
+MDK-ARM/**/*.axf
+MDK-ARM/**/*.hex
+MDK-ARM/**/*.map
+MDK-ARM/**/*.lnp
+MDK-ARM/**/*.htm
+MDK-ARM/**/*.sct
+MDK-ARM/**/*.iex
+MDK-ARM/**/*.dep
+MDK-ARM/**/*.lst
+MDK-ARM/**/RTE/
+MDK-ARM/DebugConfig/
+
+# IDE files
+MDK-ARM/*.uvoptx
+
+# CubeMX
+.mxproject
