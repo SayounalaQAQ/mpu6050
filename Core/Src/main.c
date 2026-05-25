@@ -36,7 +36,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define OLED_REFRESH_DELAY_MS   50
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -108,26 +108,26 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	MPU6050_Read_All();
+		MPU6050_ReadAll();
 
-	char buf[17];
-	sprintf(buf, "AX% 5.2f AY% 5.2f", Ax, Ay);
-	buf[16] = '\0';
-	OLED_ShowString(1, 1, buf);
+		char buf[17];
+		sprintf(buf, "AX% 5.2f AY% 5.2f", MPU6050_GetAccelX(), MPU6050_GetAccelY());
+		buf[16] = '\0';
+		OLED_ShowString(1, 1, buf);
 
-	sprintf(buf, "AZ% 5.2f GX% 6.2f", Az, Gx);
-	buf[16] = '\0';
-	OLED_ShowString(2, 1, buf);
+		sprintf(buf, "AZ% 5.2f GX% 6.2f", MPU6050_GetAccelZ(), MPU6050_GetGyroX());
+		buf[16] = '\0';
+		OLED_ShowString(2, 1, buf);
 
-	sprintf(buf, "GY% 6.2f GZ% 6.2f", Gy, Gz);
-	buf[16] = '\0';
-	OLED_ShowString(3, 1, buf);
+		sprintf(buf, "GY% 6.2f GZ% 6.2f", MPU6050_GetGyroY(), MPU6050_GetGyroZ());
+		buf[16] = '\0';
+		OLED_ShowString(3, 1, buf);
 
-	sprintf(buf, "Temp:%.1f C", Temperature);
-	buf[16] = '\0';
-	OLED_ShowString(4, 1, buf);
+		sprintf(buf, "Temp:%.1f C", MPU6050_GetTemperature());
+		buf[16] = '\0';
+		OLED_ShowString(4, 1, buf);
 
-	HAL_Delay(50);
+		HAL_Delay(OLED_REFRESH_DELAY_MS);
   }
   /* USER CODE END 3 */
 }
@@ -174,6 +174,12 @@ void SystemClock_Config(void)
 /* USER CODE BEGIN 4 */
 #pragma import(__use_no_semihosting)
 
+/**
+  * @brief   重定向 printf 到 USART1
+  * @param   ch  要发送的字符
+  * @param   f   文件指针（未使用）
+  * @retval  输出的字符
+  */
 int fputc(int ch, FILE *f)
 {
   HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
