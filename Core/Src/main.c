@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "i2c.h"
+#include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -92,6 +93,7 @@ int main(void)
   MX_GPIO_Init();
   MX_USART1_UART_Init();
   MX_I2C2_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 	OLED_Init();
 	OLED_ShowString(1, 1, "OLED: OK");
@@ -160,7 +162,7 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-这个项目  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
@@ -175,10 +177,10 @@ void SystemClock_Config(void)
 #pragma import(__use_no_semihosting)
 
 /**
-  * @brief   重定向 printf 到 USART1
+  * @brief   重定�? printf �? USART1
   * @param   ch  要发送的字符
-  * @param   f   文件指针（未使用）
-  * @retval  输出的字符
+  * @param   f   文件指针（未使用�?
+  * @retval  输出的字�?
   */
 int fputc(int ch, FILE *f)
 {
