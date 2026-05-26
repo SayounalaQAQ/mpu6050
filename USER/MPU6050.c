@@ -7,7 +7,7 @@
 #define MPU6050_SMPLRT_DIV     19
 
 /* ---------- 俯仰角低通滤波系数（越小越平滑） ---------- */
-#define PITCH_LP_ALPHA          0.15f
+#define PITCH_LP_ALPHA          0.4f
 
 /* ---------- 私有变量 ---------- */
 static uint8_t  MPU_Data[MPU6050_DATA_LEN];

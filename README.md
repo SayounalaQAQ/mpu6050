@@ -317,13 +317,13 @@ pitch = atan2(-Accel_X, sqrt(Accel_Y² + Accel_Z²)) × 180 / π
 原始加速度计噪声较大，导致俯仰角跳变。代码中实现了一阶低通滤波（EMA）：
 
 ```c
-#define PITCH_LP_ALPHA  0.15f
+#define PITCH_LP_ALPHA  0.4f
 
 Pitch_Filtered = ALPHA × pitch_raw + (1 - ALPHA) × Pitch_Filtered;
 ```
 
-- `ALPHA = 0.15`：滤波深度大，平滑效果好
-- 有效滤除高频抖动，使电机控制更稳定
+- `ALPHA = 0.4`：兼顾平滑与响应速度
+- 有效滤除高频抖动，同时保证放平后约 100ms 内电机停转
 
 ---
 
