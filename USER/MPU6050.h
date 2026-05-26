@@ -78,4 +78,10 @@ float MPU6050_GetGyroZ(void);
   */
 float MPU6050_GetTemperature(void);
 
+/**
+  * @brief  计算俯仰角（°），基于加速度计
+  * @retval 角度值，正号表示前倾，负号表示后仰
+  */
+float MPU6050_GetPitch(void);
+
 #endif

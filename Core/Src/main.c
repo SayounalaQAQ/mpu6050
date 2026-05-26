@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include "OLED.h"
 #include "MPU6050.h"
+#include "DC_Motor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -100,6 +101,9 @@ int main(void)
 
 	MPU6050_Init();
 	OLED_ShowString(1, 1, "MPU6050: Ready");
+
+	DC_Motor_Init();
+	OLED_ShowString(2, 1, "Motor: OK");
 	HAL_Delay(500);
   /* USER CODE END 2 */
 
@@ -113,6 +117,9 @@ int main(void)
 		MPU6050_ReadAll();
 
 		char buf[17];
+		float pitch = MPU6050_GetPitch();
+		DC_Motor_ControlByPitch(pitch);
+
 		sprintf(buf, "AX% 5.2f AY% 5.2f", MPU6050_GetAccelX(), MPU6050_GetAccelY());
 		buf[16] = '\0';
 		OLED_ShowString(1, 1, buf);
@@ -126,6 +133,10 @@ int main(void)
 		OLED_ShowString(3, 1, buf);
 
 		sprintf(buf, "Temp:%.1f C", MPU6050_GetTemperature());
+		buf[16] = '\0';
+		OLED_ShowString(4, 1, buf);
+
+		sprintf(buf, "Pitch:% 6.1f", pitch);
 		buf[16] = '\0';
 		OLED_ShowString(4, 1, buf);
 
@@ -177,10 +188,10 @@ void SystemClock_Config(void)
 #pragma import(__use_no_semihosting)
 
 /**
-  * @brief   重定�? printf �? USART1
+  * @brief   重定向 printf 到 USART1
   * @param   ch  要发送的字符
-  * @param   f   文件指针（未使用�?
-  * @retval  输出的字�?
+  * @param   f   文件指针（未使用）
+  * @retval  输出的字符
   */
 int fputc(int ch, FILE *f)
 {

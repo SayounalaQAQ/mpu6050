@@ -15,6 +15,7 @@
 | **OLED (0.96")** | 软件模拟 I2C | PB6 (SCL), PB7 (SDA) | GPIO 引脚直接翻转电平 |
 | **MPU6050** | 硬件 I2C2 外设 | PB10 (SCL), PB11 (SDA) | 复用功能开漏输出 |
 | **USART1（调试）** | 串口 | PA9 (TX), PA10 (RX) | 可用于 printf 输出 |
+| **直流电机** | TB717A3 驱动 | PA1 (PWM), PA4 (IN1), PA5 (IN2) | TIM2_CH2 输出 20kHz PWM |
 
 ### MPU6050 接线明细
 
@@ -31,6 +32,31 @@
 ### OLED 接线明细
 
 OLED 使用软件模拟 I2C（bit-bang），接 PB6(SCL)、PB7(SDA)，供电 3.3V。
+
+### 直流电机接线明细
+
+电机通过 **TB717A3** 驱动芯片控制，该芯片用于放大 PWM 信号电压以驱动直流电机：
+
+| TB717A3 引脚 | 接 STM32 | 功能 |
+|:---|:---|:---|
+| PWM | PA1 (TIM2_CH2) | 20kHz 调速信号 |
+| IN1 | PA4 | 转向控制 1 |
+| IN2 | PA5 | 转向控制 2 |
+
+**转向逻辑：**
+
+| IN1 | IN2 | 电机状态 |
+|:---:|:---:|:---|
+| 1 | 0 | 正转 (CW) |
+| 0 | 1 | 反转 (CCW) |
+| 0 | 0 | 停止 (STOP) |
+| 1 | 1 | 刹车 |
+
+**PWM 参数：**
+
+- 频率：**20kHz**（人耳不可闻，适合直流电机驱动）
+- 分辨率：**450 级**（0 ~ 449）
+- 有效占空比范围：22% ~ 100%
 
 ---
 
@@ -275,9 +301,123 @@ Temp (°C) = (raw_value / 340.0) + 36.53
 
 > raw_value 为负值时温度低于 36.53°C。
 
+### 俯仰角计算
+
+使用加速度计数据计算俯仰角（Pitch），公式如下：
+
+```
+pitch = atan2(-Accel_X, sqrt(Accel_Y² + Accel_Z²)) × 180 / π
+```
+
+- **正值**表示前倾，**负值**表示后仰
+- 基于加速度计的重力分量计算，静态精度高但动态响应有延迟
+
+#### 软件低通滤波
+
+原始加速度计噪声较大，导致俯仰角跳变。代码中实现了一阶低通滤波（EMA）：
+
+```c
+#define PITCH_LP_ALPHA  0.15f
+
+Pitch_Filtered = ALPHA × pitch_raw + (1 - ALPHA) × Pitch_Filtered;
+```
+
+- `ALPHA = 0.15`：滤波深度大，平滑效果好
+- 有效滤除高频抖动，使电机控制更稳定
+
 ---
 
-## 四、程序主流程 (main.c)
+
+
+## 五、直流电机驱动实现
+
+### 驱动芯片 TB717A3
+
+TB717A3 是一款直流电机驱动芯片，提供：
+- **电压放大**：将 STM32 的 3.3V PWM 信号升压为电机所需电压
+- **方向控制**：通过 IN1/IN2 逻辑电平控制正反转
+- **使能控制**：通过 PWM 信号调速
+
+### 电机驱动模块（DC_Motor）
+
+驱动代码位于 `USER/DC_Motor.c` 和 `USER/DC_Motor.h`，封装了所有电机操作。
+
+#### 初始化流程
+
+```c
+void DC_Motor_Init(void)
+{
+    /* 重配置 TIM2 为 20kHz PWM */
+    HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_2);
+    TIM2->PSC = 7;       // 72MHz / 8 = 9MHz
+    TIM2->ARR = 449;     // 9MHz / 450 = 20kHz
+    TIM2->EGR = TIM_EGR_UG;  // 加载新配置
+    HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+
+    DC_Motor_SetDirection(STOP);
+    DC_Motor_SetSpeed(0);
+}
+```
+
+CubeMX 默认将 TIM2 配置为 1kHz 通用定时器，不适合电机驱动。初始化时在用户代码区实时重配为 **20kHz**（高于人耳听觉范围，避免电机啸叫）。
+
+#### 转速控制
+
+```c
+void DC_Motor_SetSpeed(uint16_t pulse)
+```
+
+通过 `__HAL_TIM_SET_COMPARE()` 设置 TIM2_CH2 比较值，控制 PWM 占空比：
+
+| 脉冲值 | 占空比 | 电机状态 |
+|:---:|:---:|:---|
+| 0 | 0% | 停止 |
+| 100 | ~22% | 最小启动（克服静摩擦） |
+| 300 | ~67% | 中速 |
+| 449 | ~100% | 最快 |
+
+> **注意：** 占空比过小时（<20%）电机只响不转，因为线圈产生的电磁力不足以克服转子静摩擦。`MOTOR_DUTY_MIN_START = 100` 保证了起步驱动力。
+
+#### 转向控制
+
+```c
+void DC_Motor_SetDirection(uint8_t dir)
+```
+
+通过控制 PA4(IN1) 和 PA5(IN2) 的电平实现：
+
+| dir | IN1 | IN2 | 效果 |
+|:---|:---:|:---:|:---|
+| `MOTOR_DIR_CW` | 1 | 0 | 正转 |
+| `MOTOR_DIR_CCW` | 0 | 1 | 反转 |
+| `MOTOR_DIR_STOP` | 0 | 0 | 停止 |
+
+#### 俯仰角控制算法
+
+```c
+void DC_Motor_ControlByPitch(float pitch)
+```
+
+这是核心控制函数，根据 MPU6050 的俯仰角决定电机行为：
+
+```
+俯仰角 < 死区（5°） -> 电机停止（防抖动）
+俯仰角 > 0（前倾）  -> 正转
+俯仰角 < 0（后仰）  -> 反转
+
+转速映射：
+  pulse = MIN_START + (FULL - MIN_START) x (|角度| / 最大角度)
+
+示例：
+  角度 = 0°  ->  pulse =   0  -> 电机停止
+  角度 = 5°  ->  pulse = 100  -> 最低速旋转（22% 占空比）
+  角度 = 30° ->  pulse = 274  -> 中速（61%）
+  角度 = 60° ->  pulse = 449  -> 最快（100%）
+```
+
+角度限幅在 **60°**，超出按最大速度处理。死区 **5°** 防止微小角度变化导致电机频繁启停。
+
+## 六、程序主流程 (main.c)
 
 ```
 HAL_Init()
@@ -285,24 +425,21 @@ HAL_Init()
 SystemClock_Config()   → HSE 8MHz → PLL x9 → SYSCLK 72MHz
    ↓
 MX_GPIO_Init()         → PB6/PB7 开漏输出（OLED 软件 I2C）
+                         PA4/PA5 推挽输出（电机方向）
 MX_USART1_UART_Init()  → 串口 printf
 MX_I2C2_Init()         → PB10/PB11 I2C2（MPU6050）
+MX_TIM2_Init()         → PA1 TIM2_CH2 PWM（默认 1kHz）
    ↓
-OLED_Init()            → SSD1306 初始化 + 清屏
-I2C_Scan()             → 扫描 I2C 总线，显示检测到的设备
-   ↓
-唤醒 MPU6050           → 写 0x00 到寄存器 0x6B
-配置陀螺仪量程         → 写 0x00 到 0x1B（±250°/s）
-配置加速度量程         → 写 0x00 到 0x1C（±2g）
-配置 DLPF 滤波器       → 写 0x03 到 0x1A（44Hz）
-配置采样率             → 写 19 到 0x19（50Hz）
+OLED_Init()            → SSD1306 初始化 + 清屏，显示 "OLED: OK"
+MPU6050_Init()         → 唤醒、配置量程/滤波器/采样率，显示 "MPU6050: Ready"
+DC_Motor_Init()        → 重配 TIM2 为 20kHz，启动 PWM，显示 "Motor: OK"
    ↓
 while(1) {
-    读取 14 字节 (0x3B ~ 0x48)
-    Accel = raw / 16384  →  g 单位 (AX/AY/AZ)
-    Gyro  = raw / 131    →  °/s 单位 (GX/GY/GZ)
-    Temp  = raw/340 + 36.53  →  °C
-    OLED 显示
+    MPU6050_ReadAll()       → 读取 14 字节并换算物理单位
+    pitch = GetPitch()      → 加速度计计算俯仰角（含低通滤波）
+    DC_Motor_ControlByPitch → 根据俯仰角控制转向 + 转速
+
+    OLED 显示 AX/AY/AZ/GX/GY/GZ/Temp/Pitch
     延时 50ms（约 20Hz）
 }
 ```
@@ -313,7 +450,7 @@ while(1) {
 
 ---
 
-## 五、常见问题排查
+## 七、常见问题排查
 
 ### OLED 不显示
 - 检查 PB6/PB7 接线
@@ -331,9 +468,18 @@ while(1) {
 - I2C 速率过高（建议 100kHz）
 - 数据未正确合并高低字节
 
+### 电机只响不转
+- **占空比过低**：检查 `MOTOR_DUTY_MIN_START`，低于 22% 电机无法克服静摩擦
+- **转向引脚悬空**：检查 PA4/PA5 接线
+- **PWM 频率不合适**：在 `DC_Motor_Init()` 中确认 TIM2 已重配为 20kHz
+- **驱动芯片供电不足**：检查 TB717A3 的电源电压
+
+### 电机转向反了
+- 交换 `DC_Motor.c` 中 `MOTOR_DIR_CW` 的 IN1/IN2 电平，或将电机两根线对调
+
 ---
 
-## 六、项目文件结构
+## 八、项目文件结构
 
 ```
 mpu6050/
@@ -341,15 +487,21 @@ mpu6050/
 │   ├── Inc/               # 头文件
 │   │   ├── main.h
 │   │   ├── gpio.h
+│   │   ├── tim.h
 │   │   ├── i2c.h
 │   │   └── usart.h
 │   └── Src/               # 源文件
-│       ├── main.c         # 主程序（含 I2C 扫描、MPU6050 读写）
-│       ├── gpio.c         # GPIO 初始化
+│       ├── main.c         # 主程序（初始化 + 主循环）
+│       ├── gpio.c         # GPIO 初始化（含 PA4/PA5 电机方向）
+│       ├── tim.c          # TIM2 初始化（PA1 PWM）
 │       ├── i2c.c          # I2C2 外设初始化
 │       ├── usart.c        # 串口初始化
 │       └── stm32f1xx_it.c # 中断服务函数
 ├── USER/
+│   ├── DC_Motor.c         # 直流电机驱动（PWM + 方向 + 俯仰角控制）
+│   ├── DC_Motor.h
+│   ├── MPU6050.c          # MPU6050 传感器驱动（含俯仰角计算 + 滤波）
+│   ├── MPU6050.h
 │   ├── OLED.c             # OLED 驱动（软件 I2C）
 │   ├── OLED.h
 │   └── OLED_FONT.h        # 8×16 字库

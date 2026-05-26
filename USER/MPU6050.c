@@ -1,9 +1,13 @@
 #include "MPU6050.h"
 #include "main.h"
 #include "i2c.h"
+#include <math.h>
 
 /* ---------- 采样率分频（陀螺仪输出率 1kHz / (1 + divider)） ---------- */
 #define MPU6050_SMPLRT_DIV     19
+
+/* ---------- 俯仰角低通滤波系数（越小越平滑） ---------- */
+#define PITCH_LP_ALPHA          0.15f
 
 /* ---------- 私有变量 ---------- */
 static uint8_t  MPU_Data[MPU6050_DATA_LEN];
@@ -12,6 +16,7 @@ static int16_t  Gyro_X, Gyro_Y, Gyro_Z;
 static float    Accel_X_f, Accel_Y_f, Accel_Z_f;
 static float    Gyro_X_f, Gyro_Y_f, Gyro_Z_f;
 static float    Temp_f;
+static float    Pitch_Filtered = 0.0f;   /* 一阶低通滤波后的俯仰角 */
 
 /**
   * @brief   写 MPU6050 寄存器
@@ -155,4 +160,20 @@ float MPU6050_GetGyroZ(void)
 float MPU6050_GetTemperature(void)
 {
     return Temp_f;
+}
+
+/**
+  * @brief  计算俯仰角（°），基于加速度计数据（含一阶低通滤波）
+  * @retval 角度值，正号表示前倾，负号表示后仰
+  */
+float MPU6050_GetPitch(void)
+{
+    float pitch = atan2f(-Accel_X_f,
+                         sqrtf(Accel_Y_f * Accel_Y_f + Accel_Z_f * Accel_Z_f));
+    pitch = pitch * 180.0f / 3.14159265f;
+
+    /* 一阶低通滤波：平滑跳变 */
+    Pitch_Filtered = PITCH_LP_ALPHA * pitch + (1.0f - PITCH_LP_ALPHA) * Pitch_Filtered;
+
+    return Pitch_Filtered;
 }
